@@ -7,13 +7,19 @@ Pairs with the firmware in:
 What it does
 ------------
 1. Rotate motors from the keyboard. Several motors can move at the SAME time
-   because key state is read directly (you can hold q + w + d together).
-       q w e r t  -> motors 0 1 2 3 4  clockwise      (angle goes up)
-       a s d f g  -> motors 0 1 2 3 4  counter-clockwise (angle goes down)
+   because key state is read directly (you can hold several keys together).
+   Each motor has two keys (see CW_KEYS / CCW_KEYS below): one drives its
+   angle up, the other drives it down. The real-life direction each key
+   produces is documented next to those lists and printed in the banner.
    The rotation speed (degrees per second) is adjustable on the fly.
 
 2. Save the current angles of all motors to a NEW timestamped file with one
    key press (space).
+
+3. Recall a saved pose while controlling: press a number key (1-9) to load
+   saved_angles/angles_<n>.txt and smoothly drive all motors to that pose at
+   the current speed. Touching any motor key cancels the move and hands
+   control straight back to you.
 
 This script owns all motion logic: at a fixed rate it integrates the held
 keys into target angles and streams them to the Arduino as absolute
@@ -63,8 +69,18 @@ SERVO_COUNT = 5
 # the index), so you can rename them freely without touching anything else.
 MOTOR_NAMES = ["arm_top", "arm_wheel", "arm_bottom", "arm_left", "arm_right"]
 
-CW_KEYS = ["q", "w", "e", "r", "t"]   # increase angle, motors 0..4
-CCW_KEYS = ["a", "s", "d", "f", "g"]  # decrease angle, motors 0..4
+# Per-motor key bindings. CW_KEYS[i] increases servo i's angle, CCW_KEYS[i]
+# decreases it. Which physical motion that produces depends on the build, so
+# the real-life effect of each key is noted below (motors 0..4):
+#
+#   motor 0 arm_top    q: rotate CW        a: rotate CCW
+#   motor 1 arm_wheel  s: turn CW          w: turn CCW
+#   motor 2 arm_bottom d: turn CW          e: turn CCW
+#   motor 3 arm_left   f: drop linkage     r: lift linkage
+#   motor 4 arm_right  t: lift linkage     g: drop linkage
+#
+CW_KEYS = ["q", "s", "d", "f", "t"]   # increase angle, motors 0..4
+CCW_KEYS = ["a", "w", "e", "r", "g"]  # decrease angle, motors 0..4
 
 SAVE_KEY = "space"             # save current angles to a new file
 HOME_KEY = "h"                 # move all motors to center (90 deg)
@@ -72,6 +88,10 @@ OFF_KEY = "o"                  # release (de-energize) all motors
 SPEED_UP_KEYS = ["=", "+"]     # faster
 SPEED_DOWN_KEYS = ["-"]        # slower
 QUIT_KEY = "esc"
+
+# Number key N loads saved_angles/angles_<N>.txt and moves there.
+LOAD_SLOT_KEYS = [str(d) for d in range(1, 10)]   # 1..9
+LIST_KEY = "l"                 # print the available saved sets
 
 START_ANGLE = 90.0             # center; matches the firmware "H" command
 ANGLE_MIN = 0.0
@@ -132,6 +152,59 @@ def save_angles(angles, speed):
     return path
 
 
+def _parse_numbers(text):
+    """Pull every number out of a line, ignoring commas, brackets and labels."""
+    out = []
+    for tok in text.replace(",", " ").replace("[", " ").replace("]", " ").split():
+        try:
+            out.append(float(tok))
+        except ValueError:
+            pass
+    return out
+
+
+def load_angle_set(slot):
+    """Read saved_angles/angles_<slot>.txt -> list of SERVO_COUNT angles, or None."""
+    path = os.path.join(SAVE_DIR, f"angles_{slot}.txt")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    for line in lines:
+        s = line.strip()
+        # The "angles = [...]" or "S ..." line both carry the values.
+        if s.startswith("angles") and "=" in s:
+            nums = _parse_numbers(s.split("=", 1)[1])
+        elif s.startswith("S "):
+            nums = _parse_numbers(s[1:])
+        else:
+            continue
+        if len(nums) >= SERVO_COUNT:
+            return [clamp(n, ANGLE_MIN, ANGLE_MAX) for n in nums[:SERVO_COUNT]]
+    return None
+
+
+def available_slots():
+    """Slot numbers (1..9) that have a saved_angles/angles_<n>.txt file."""
+    return [d for d in range(1, 10)
+            if os.path.isfile(os.path.join(SAVE_DIR, f"angles_{d}.txt"))]
+
+
+def print_saved_sets():
+    slots = available_slots()
+    if not slots:
+        print("\n(no saved sets found in saved_angles/ as angles_<n>.txt)")
+        return
+    print("\nSaved sets (press the number to move there):")
+    for d in slots:
+        vals = load_angle_set(d)
+        shown = " ".join(str(int(round(v))) for v in vals) if vals else "?"
+        print(f"   {d} : angles_{d}.txt -> [{shown}]")
+
+
 def print_banner(port, speed):
     name_width = max(len(motor_name(i)) for i in range(SERVO_COUNT))
     print("=" * 60)
@@ -146,6 +219,8 @@ def print_banner(port, speed):
     print("")
     print(f" {'/'.join(SPEED_UP_KEYS)} : speed up      {'/'.join(SPEED_DOWN_KEYS)} : speed down")
     print(f" {SAVE_KEY:<5}: save angles to a new file")
+    print(f" 1-9  : move to saved set saved_angles/angles_<n>.txt")
+    print(f" {LIST_KEY:<5}: list the saved sets")
     print(f" {HOME_KEY:<5}: home all motors to center (90 deg)")
     print(f" {OFF_KEY:<5}: release (power off) all motors")
     print(f" {QUIT_KEY:<5}: quit")
@@ -168,8 +243,13 @@ def main():
     angles = [START_ANGLE] * SERVO_COUNT
     last_sent = [None] * SERVO_COUNT
     speed = SPEED_DEG_PER_S
+    target = None  # when set, the saved pose we are ramping toward
 
-    edges = EdgeDetector(SPEED_UP_KEYS + SPEED_DOWN_KEYS + [SAVE_KEY, HOME_KEY, OFF_KEY])
+    edges = EdgeDetector(
+        SPEED_UP_KEYS + SPEED_DOWN_KEYS
+        + [SAVE_KEY, HOME_KEY, OFF_KEY, LIST_KEY]
+        + LOAD_SLOT_KEYS
+    )
 
     def send_angles():
         rounded = [int(round(a)) for a in angles]
@@ -178,6 +258,8 @@ def main():
             last_sent[:] = rounded
 
     print_banner(port, speed)
+    print_saved_sets()
+    print("")
 
     # Start from a known pose so software angles match the hardware.
     ser.write(b"H\n")
@@ -205,11 +287,13 @@ def main():
                     speed = clamp(speed - SPEED_STEP, SPEED_MIN, SPEED_MAX)
 
             if edges.pressed(HOME_KEY):
+                target = None
                 angles = [START_ANGLE] * SERVO_COUNT
                 ser.write(b"H\n")
                 last_sent[:] = [int(round(START_ANGLE))] * SERVO_COUNT
 
             if edges.pressed(OFF_KEY):
+                target = None
                 ser.write(b"O\n")
                 last_sent[:] = [None] * SERVO_COUNT  # force a resend on next move
 
@@ -217,24 +301,60 @@ def main():
                 path = save_angles(angles, speed)
                 print(f"\n[saved] {path}")
 
-            # --- continuous motor keys (can be held simultaneously) ----------
-            for i in range(SERVO_COUNT):
-                delta = 0.0
-                if keyboard.is_pressed(CW_KEYS[i]):
-                    delta += speed * dt
-                if keyboard.is_pressed(CCW_KEYS[i]):
-                    delta -= speed * dt
-                if delta != 0.0:
-                    angles[i] = clamp(angles[i] + delta, ANGLE_MIN, ANGLE_MAX)
+            if edges.pressed(LIST_KEY):
+                print_saved_sets()
+
+            # --- load a saved angle set (number keys) ------------------------
+            for slot in LOAD_SLOT_KEYS:
+                if edges.pressed(slot):
+                    loaded = load_angle_set(slot)
+                    if loaded is None:
+                        print(f"\n[set {slot}] angles_{slot}.txt not found / unreadable")
+                    else:
+                        target = loaded
+                        print(f"\n[set {slot}] moving to {[int(round(v)) for v in loaded]}")
+
+            # --- motion: ramp toward a loaded set, else manual control -------
+            manual_held = any(
+                keyboard.is_pressed(CW_KEYS[i]) or keyboard.is_pressed(CCW_KEYS[i])
+                for i in range(SERVO_COUNT)
+            )
+            if target is not None and manual_held:
+                target = None  # touching any motor key cancels the auto-move
+
+            if target is not None:
+                step = speed * dt
+                reached = True
+                for i in range(SERVO_COUNT):
+                    diff = target[i] - angles[i]
+                    if abs(diff) <= step:
+                        angles[i] = target[i]
+                    else:
+                        angles[i] += step if diff > 0 else -step
+                        reached = False
+                if reached:
+                    target = None
+            else:
+                for i in range(SERVO_COUNT):
+                    delta = 0.0
+                    if keyboard.is_pressed(CW_KEYS[i]):
+                        delta += speed * dt
+                    if keyboard.is_pressed(CCW_KEYS[i]):
+                        delta -= speed * dt
+                    if delta != 0.0:
+                        angles[i] = clamp(angles[i] + delta, ANGLE_MIN, ANGLE_MAX)
 
             send_angles()
 
             # --- live status line --------------------------------------------
             if now - last_status > 0.15:
+                name_w = max(len(motor_name(i)) for i in range(SERVO_COUNT))
                 shown = " | ".join(
-                    f"{motor_name(i)[:6]}:{angles[i]:5.1f}" for i in range(SERVO_COUNT)
+                    f"{motor_name(i):<{name_w}}:{angles[i]:6.1f}" for i in range(SERVO_COUNT)
                 )
-                print(f"\rspeed {speed:5.0f} deg/s | {shown}   ", end="", flush=True)
+                tag = "  [-> set]" if target is not None else ""
+                line = f"speed {speed:5.0f} deg/s | {shown}{tag}"
+                print("\r" + line.ljust(118), end="", flush=True)
                 last_status = now
 
             elapsed = time.perf_counter() - now

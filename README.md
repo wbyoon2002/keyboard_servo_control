@@ -54,13 +54,24 @@ MOTOR_NAMES = ["Base", "Shoulder", "Elbow", "Wrist", "Gripper"]
 
 ## 4. 키 조작
 
+모터별 조작 (앞 키 = 각도 증가, 뒤 키 = 각도 감소):
+
+| 키 | 모터 | 실제 동작 |
+|----|------|----------|
+| `q` / `a` | arm_top | 시계방향 / 반시계방향 회전 |
+| `s` / `w` | arm_wheel | 시계방향 / 반시계방향 회전 |
+| `d` / `e` | arm_bottom | 시계방향 / 반시계방향 회전 |
+| `f` / `r` | arm_left | 링키지 내림 / 올림 |
+| `t` / `g` | arm_right | 링키지 올림 / 내림 |
+
+여러 키를 동시에 누르면 해당 모터들이 **동시에** 회전합니다.
+
 | 키 | 동작 |
 |----|------|
-| `q w e r t` | 모터 0·1·2·3·4 **시계방향**(각도 증가) |
-| `a s d f g` | 모터 0·1·2·3·4 **반시계방향**(각도 감소) |
-| 여러 키 동시에 | 해당 모터들이 **동시에** 회전 |
 | `=` / `+` | 회전 속도 ↑ |
 | `-` | 회전 속도 ↓ |
+| `1`~`9` | 저장된 세트 `saved_angles/angles_<n>.txt`로 **이동** |
+| `l` | 사용 가능한 저장 세트 목록 출력 |
 | `Space` | 현재 모든 모터 각도를 **새 파일로 저장** |
 | `h` | 모든 모터를 중앙(90°)으로 |
 | `o` | 모든 모터 출력 해제(토크 off) |
@@ -69,6 +80,20 @@ MOTOR_NAMES = ["Base", "Shoulder", "Elbow", "Wrist", "Gripper"]
 - 키를 **누르고 있는 동안** 설정된 속도(deg/s)로 계속 회전합니다.
 - 같은 모터의 시계/반시계 키를 동시에 누르면 상쇄되어 멈춥니다.
 
+### 저장된 각도 세트 불러오기
+
+제어 중에 숫자 키 `1`~`9`를 누르면 `saved_angles/angles_<숫자>.txt` 파일을 읽어
+모든 모터를 그 자세로 **현재 속도(deg/s)에 맞춰 부드럽게 이동**시킵니다.
+
+- 예: `2`를 누르면 `saved_angles/angles_2.txt`의 각도로 이동.
+- 이동 중 아무 모터 키나 누르면 이동이 **즉시 취소**되고 수동 제어로 돌아갑니다.
+- `h`(중앙) 또는 `o`(출력 해제)를 누르면 이동이 취소됩니다.
+- 상태 줄에 `[-> set]` 표시가 나오면 자동 이동 중이라는 뜻입니다.
+- `l`을 누르면 현재 사용 가능한 세트 번호와 각도를 표로 보여줍니다.
+
+세트 파일은 `Space`로 저장한 파일의 이름을 `angles_1.txt`, `angles_2.txt` … 처럼
+**숫자로 바꿔** 두면 됩니다(파일 형식은 그대로 사용).
+
 ## 5. 저장 파일
 
 `Space`를 누를 때마다 `saved_angles/angles_YYYYMMDD_HHMMSS.txt` 형식의
@@ -76,17 +101,17 @@ MOTOR_NAMES = ["Base", "Shoulder", "Elbow", "Wrist", "Gripper"]
 
 ```
 # Saved motor angles
-# timestamp : 2026-06-16T14:32:10
+# timestamp : 2026-06-16T18:37:13
 # speed     : 60 deg/s
-motor 0 (Base    ) : 95 deg
-motor 1 (Shoulder) : 88 deg
-motor 2 (Elbow   ) : 90 deg
-motor 3 (Wrist   ) : 120 deg
-motor 4 (Gripper ) : 60 deg
+motor 0 (arm_top   ) : 90 deg
+motor 1 (arm_wheel ) : 180 deg
+motor 2 (arm_bottom) : 0 deg
+motor 3 (arm_left  ) : 63 deg
+motor 4 (arm_right ) : 43 deg
 
-names  = ["Base", "Shoulder", "Elbow", "Wrist", "Gripper"]
-angles = [95, 88, 90, 120, 60]
-S 95 88 90 120 60
+names  = ["arm_top", "arm_wheel", "arm_bottom", "arm_left", "arm_right"]
+angles = [90, 180, 0, 63, 43]
+S 90 180 0 63 43
 ```
 
 마지막 `S ...` 줄은 그대로 아두이노에 보내면 같은 자세를 재현할 수 있는 명령입니다.
