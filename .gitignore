@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Runtime-generated motor pose dumps (created by motor_keyboard_control.py)
+saved_angles/
+
+# Arduino build artifacts
+build/
+*.hex
+*.elf
+*.bin
