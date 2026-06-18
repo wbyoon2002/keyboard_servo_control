@@ -9,6 +9,13 @@ env/
 # Runtime-generated motor pose dumps (created by motor_keyboard_control.py)
 saved_angles/
 
+# Runtime-generated macro storage (created by gui_motor_control.py;
+# canonical defaults live in DEFAULT_MACROS in that file)
+macros.json
+
+# Local scratch file
+temp.py
+
 # Arduino build artifacts
 build/
 *.hex
