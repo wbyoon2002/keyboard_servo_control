@@ -78,7 +78,7 @@ MACROS = {
     "roll_home": [
         {"type": "move", "index": ABOT, "angle": 0, "speed": 15},
         {"type": "move", "index": ATOP, "angle": 90, "speed": 15},
-        {"type": "move", "index": WHEEL, "angle": 0, "speed": 15},
+        {"type": "move", "index": WHEEL, "angle": 180, "speed": 15},
     ],
     "roll_right": [
         {"type": "move", "index": ABOT, "angle": 0, "speed": 15},
@@ -101,6 +101,7 @@ MACROS = {
         # initialize
         {"type": "run", "macro": "aleft_hold"},
         {"type": "run", "macro": "aright_hold"},
+        # {"type": "move", "index": ARIGHT, "angle": 52, "speed": 20},
         {"type": "move", "index": ABOT, "angle": 0, "speed": 20},
         {"type": "move", "index": WHEEL, "angle": 180, "speed": 20},
         {"type": "delay", "seconds": 5.0},
@@ -118,11 +119,13 @@ MACROS = {
         {"type": "delay", "seconds": 5.0},
         {"type": "relative", "index": ABOT, "angle": 60, "speed": 20},
         {"type": "delay", "seconds": 5.0},
-        {"type": "relative", "index": ATOP, "angle": -30, "speed": 20},
+        {"type": "relative", "index": ATOP, "angle": -5, "speed": 20},
         {"type": "relative", "index": WHEEL, "angle": -90, "speed": 20},
-        {"type": "relative", "index": ABOT, "angle": 120, "speed": 30},
+        {"type": "relative", "index": ABOT, "angle": 90, "speed": 30},
         {"type": "delay", "seconds": 5.0},
         {"type": "run", "macro": "aleft_hold"},
+        {"type": "run", "macro": "roll_home"},
+
 
     ]
 }
@@ -139,7 +142,7 @@ class AngleOffsetManager:
     So, offset = 55 - 90 = -35.
     """
     def __init__(self):
-        self.offsets = [55.0 - 90.0, 0.0, 0.0, 0.0, 0.0]
+        self.offsets = [80.0 - 90.0, 0.0, 0.0, 0.0, 0.0]
 
     def to_physical(self, index, logical_angle):
         return logical_angle + self.offsets[index]
